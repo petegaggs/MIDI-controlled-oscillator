@@ -18,29 +18,15 @@ MIDI_CREATE_DEFAULT_INSTANCE();
 #define SLAVE_SELECT_PIN 10 //spi chip select
 #define TIMER_PIN 9 //OC1A output
 #define GATE_PIN 8 //gate control
-#define MIDI_BASE_NOTE 21 //midi tables start at this note
-
+#define MIDI_BASE_NOTE 21 //lowest midi note
+#define BASE_NOTE_FREQ 27.5
+#define VOLTS_PER_SEMITONE 1.0 / 12.0
+#define DAC_MULTIPLIER 0.97783686 // see spreadsheet
+#define PITCH_BEND_FACTOR 1.0 / 32768.0; //adjust for desired pitch bend operation
 //MIDI variables
 int currentMidiNote; //the note currently being played
 int keysPressedArray[128] = {0}; //to keep track of which keys are pressed
-
-// tables
-// OCR1A timer values, starting at midi note 21, ending at 108 See spreadsheet
-uint16_t timerTable[] = {
-  36363,34322,32395,30577,28861,27241,25712,24269,22907,21621,20407,19262,18181,17160,16197,15288,
-  14430,13620,12855,12134,11453,10810,10203,9630,9090,8580,8098,7644,7214,6809,6427,6066,5726,
-  5404,5101,4815,4544,4289,4049,3821,3607,3404,3213,3033,2862,2702,2550,2407,2272,2144,2024,1910,
-  1803,1702,1606,1516,1431,1350,1275,1203,1135,1072,1011,955,901,850,803,757,715,675,637,601,567,
-  535,505,477,450,425,401,378,357,337,318,300,283,267,252,238
-};
-
-// DAC value for integrator drive. For 12 bit DAC
-uint16_t dacTable[] = {
-  27,28,30,32,34,36,38,40,43,45,48,51,54,57,60,64,68,72,76,81,85,90,96,102,108,114,121,128,136,144,
-  152,161,171,181,192,203,215,228,241,256,271,287,304,322,341,362,383,406,430,456,483,512,542,574,
-  608,645,683,724,767,812,860,912,966,1023,1084,1149,1217,1289,1366,1447,1533,1624,1721,1823,1932,
-  2047,2168,2297,2434,2579,2732,2894,3066,3249,3442,3647,3863,4093
-};
+float virtualControlVoltage;
 
 void setTimer1(uint16_t val) {
   OCR1AH = val >> 8;
@@ -55,6 +41,8 @@ void setup() {
   MIDI.setHandleNoteOn(HandleNoteOn);  // Put only the name of the function
   // Do the same for NoteOffs
   MIDI.setHandleNoteOff(handleNoteOff);
+  // and also pitchbend, we can do that now we calculate the value on the fly
+  MIDI.setHandlePitchBend(handlePitchBend); 
   //SPI stuff
   pinMode (SLAVE_SELECT_PIN, OUTPUT);
   digitalWrite(SLAVE_SELECT_PIN,HIGH);
@@ -65,10 +53,6 @@ void setup() {
   // fast PWM mode 15, x8 prescaling
   TCCR1A = _BV(COM1A0) | _BV(WGM11) | _BV(WGM10);
   TCCR1B = _BV(WGM13) | _BV(WGM12) | _BV(CS11);
-  //setTimer1(0x8E0B); //lowest note 27.5Hz
-  setTimer1(0xEE); //highest note 4186Hz
-  //dacWrite(27); //lowest note
-  //dacWrite(4095); //highest note
   setNotePitch(60); //middle C for test
 }
 
@@ -110,12 +94,26 @@ void handleNoteOff(byte channel, byte pitch, byte velocity)
   }  
 }
 
+void handlePitchBend (byte channel, int bend) {
+  // respond to MIDI pitch bend messages
+  float bentControlVoltage = virtualControlVoltage + (float)bend * PITCH_BEND_FACTOR;
+  updateNotePitch(bentControlVoltage);
+}
+
+void updateNotePitch(float controlVoltage) {
+  // update note pitch in response to midi note on or pitchbend
+  float freqHz = BASE_NOTE_FREQ * pow(2.0, controlVoltage);  
+  //float halfPeriodUs = 1000000.0 / (2.0 * freqHz);  
+  //uint16_t timerSetting = round((halfPeriodUs*2.0)-1.0);
+  uint16_t timerSetting = round((1000000.0 / freqHz)-1.0);
+  setTimer1(timerSetting);
+  dacWrite(round(DAC_MULTIPLIER * freqHz));
+}
 
 void setNotePitch(int note) {
   //receive a midi note number and set both integrator drive and timer accordingly
-  int tableVal = note - MIDI_BASE_NOTE;
-  dacWrite(dacTable[tableVal]); // set the dac voltage
-  setTimer1(timerTable[tableVal]); // set the timer
+  virtualControlVoltage = (note - MIDI_BASE_NOTE) * VOLTS_PER_SEMITONE;
+  updateNotePitch(virtualControlVoltage);
 }
 
 int findHighestKeyPressed(void) {
