@@ -18,15 +18,20 @@ MIDI_CREATE_DEFAULT_INSTANCE();
 #define SLAVE_SELECT_PIN 10 //spi chip select
 #define TIMER_PIN 9 //OC1A output
 #define GATE_PIN 8 //gate control
+#define VOLTAGE_CONTROL_PIN A0
 #define MIDI_BASE_NOTE 21 //lowest midi note
 #define BASE_NOTE_FREQ 27.5
 #define VOLTS_PER_SEMITONE 1.0 / 12.0
 #define DAC_MULTIPLIER 0.97783686 // see spreadsheet
 #define PITCH_BEND_FACTOR 1.0 / 32768.0; //adjust for desired pitch bend operation
+#define ANALOG_CONTROL_SCALING 1.0 / 512.0 //adjust for desired amount of analog control
+#define ANALOG_CONTROL // comment this out if analogue control is not required
 //MIDI variables
 int currentMidiNote; //the note currently being played
 int keysPressedArray[128] = {0}; //to keep track of which keys are pressed
-float virtualControlVoltage;
+float midiControlVoltage; // represents midi note
+float analogControlVoltage = 0; // analog control from ADC (optional)
+float bendControlVoltage = 0; // represents midi pitch bend
 
 void setTimer1(uint16_t val) {
   OCR1AH = val >> 8;
@@ -38,7 +43,7 @@ void setup() {
   // Initiate MIDI communications, listen to all channels
   MIDI.begin(MIDI_CHANNEL_OMNI);      
   // Connect the HandleNoteOn function to the library, so it is called upon reception of a NoteOn.
-  MIDI.setHandleNoteOn(HandleNoteOn);  // Put only the name of the function
+  MIDI.setHandleNoteOn(handleNoteOn);  // Put only the name of the function
   // Do the same for NoteOffs
   MIDI.setHandleNoteOff(handleNoteOff);
   // and also pitchbend, we can do that now we calculate the value on the fly
@@ -58,20 +63,28 @@ void setup() {
 
 void loop() {
   MIDI.read();
+  #ifdef ANALOG_CONTROL
+  readAnalogControlVoltage();
+  updateNotePitch();
+  #endif
+}
+
+void readAnalogControlVoltage() {
+  analogControlVoltage = (float) (analogRead(VOLTAGE_CONTROL_PIN) - 512) * ANALOG_CONTROL_SCALING;
 }
 
 void dacWrite(int value) {
   //write a 12 bit number to the MCP4921 DAC
   // take the SS pin low to select the chip:
-  digitalWrite(SLAVE_SELECT_PIN,LOW);
+  PORTB &= ~4; //faster than digitalWrite
   //send a value to the DAC
   SPI.transfer(0x30 | ((value >> 8) & 0x0F)); //bits 0..3 are bits 8..11 of 12 bit value, bits 4..7 are control data 
   SPI.transfer(value & 0xFF); //bits 0..7 of 12 bit value
   // take the SS pin high to de-select the chip:
-  digitalWrite(SLAVE_SELECT_PIN,HIGH); 
+  PORTB |= 4; //faster than digitalWrite 
 }
 
-void HandleNoteOn(byte channel, byte pitch, byte velocity) { 
+void handleNoteOn(byte channel, byte pitch, byte velocity) { 
   // this function is called automatically when a note on message is received 
   keysPressedArray[pitch] = 1;
   synthNoteOn(pitch);
@@ -96,15 +109,14 @@ void handleNoteOff(byte channel, byte pitch, byte velocity)
 
 void handlePitchBend (byte channel, int bend) {
   // respond to MIDI pitch bend messages
-  float bentControlVoltage = virtualControlVoltage + (float)bend * PITCH_BEND_FACTOR;
-  updateNotePitch(bentControlVoltage);
+  bendControlVoltage = (float)bend * PITCH_BEND_FACTOR;
+  updateNotePitch();
 }
 
-void updateNotePitch(float controlVoltage) {
-  // update note pitch in response to midi note on or pitchbend
+void updateNotePitch() {
+  // update note pitch, taking into account midi note, midi pitchbend, analogue control
+  float controlVoltage = midiControlVoltage + bendControlVoltage + analogControlVoltage;
   float freqHz = BASE_NOTE_FREQ * pow(2.0, controlVoltage);  
-  //float halfPeriodUs = 1000000.0 / (2.0 * freqHz);  
-  //uint16_t timerSetting = round((halfPeriodUs*2.0)-1.0);
   uint16_t timerSetting = round((1000000.0 / freqHz)-1.0);
   setTimer1(timerSetting);
   dacWrite(round(DAC_MULTIPLIER * freqHz));
@@ -112,8 +124,8 @@ void updateNotePitch(float controlVoltage) {
 
 void setNotePitch(int note) {
   //receive a midi note number and set both integrator drive and timer accordingly
-  virtualControlVoltage = (note - MIDI_BASE_NOTE) * VOLTS_PER_SEMITONE;
-  updateNotePitch(virtualControlVoltage);
+  midiControlVoltage = ((note - MIDI_BASE_NOTE) * VOLTS_PER_SEMITONE);
+  updateNotePitch();
 }
 
 int findHighestKeyPressed(void) {
