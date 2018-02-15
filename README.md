@@ -10,6 +10,7 @@ The sawtooth is about 4V pk-pk, and the design works over a 7 octave range.
 Other features:
 MIDI control
 supports MIDI pitchbend
+Optional analogue control voltage on pin A0, to modulate pitch. Can be disabled if not required.
 powered from +9V supply (I have a local inverter to generate -9V for the op-amp).
 Nice and simple, not too many parts.
 I used an Arduino nano in my prototype, since that was what I had to hand, but it was originally going to be a pro mini 5V 16MHz.
