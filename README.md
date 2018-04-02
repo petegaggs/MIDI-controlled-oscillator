@@ -1,6 +1,6 @@
 # MIDI-controlled-oscillator
 an arduino based MIDI controlled analogue oscillator
-This is a novel approach - it's a hybrid design, with a standard op-amp integrator to generate a sawtooth much like other analogue oscillator designs.
+This approach is known as a Digitally Controlled Oscillator (DCO) - it's a hybrid design, with a standard op-amp integrator to generate a sawtooth much like other analogue oscillator designs.
 However, the reset of the integrator comes from the microcontroller, this avoids needing any tempco, matched pairs, calibration etc.
 I use the 16 bit timer to generate a square wave of the correct frequency. The rising edge of this will reset the integrator.
 So as well as a sawtooth, there is a square wave available as well, I'm not using this yet. If I were to use this, I would suggest buffering with an opamp before taking it off-board.
@@ -11,6 +11,10 @@ Other features:
 MIDI control
 supports MIDI pitchbend
 Optional analogue control voltage on pin A0, to modulate pitch. Can be disabled if not required.
+2 versions of hardware design supported:
+MK1, as described above, SPI DAC for integrator drive
+MK2; uses 8 bit PWM instead of SPI dac, at the cost of reduced note range (midi note 21-84, notes above this will play but signal amplitude will fall off). Also uses a different design of integrator that does not need a negative supply rail.
+
 powered from +9V supply (I have a local inverter to generate -9V for the op-amp).
 Nice and simple, not too many parts.
 I used an Arduino nano in my prototype, since that was what I had to hand, but it was originally going to be a pro mini 5V 16MHz.
