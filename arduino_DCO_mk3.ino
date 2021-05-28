@@ -5,8 +5,33 @@
  * runs on arduino nano or similar 328p
  * note we use the timer directly, hence only use on 328p or 168p
  * needs arduino MIDI library
- * this is the simple version, uses SPI dac
+ * this is the simple version, uses SPI dac. Only for DCOMK3 hardware
+ * 
+ * MIT License
+ * Copyright (c) 2019 petegaggs
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
+
+ 
+// configure for DAC type
+#define MCP_4822
+//#define MCP_4921
 #include <MIDI.h>
 #include <midi_Defs.h>
 #include <midi_Message.h>
@@ -16,7 +41,7 @@ MIDI_CREATE_DEFAULT_INSTANCE();
 #include <avr/io.h> 
 #include <avr/interrupt.h>
 #include <SPI.h>
-#define SLAVE_SELECT_PIN 10 //spi chip select
+#define SLAVE_SELECT_PIN 7 //spi chip select
 #define TIMER_PIN 9 //OC1A output
 #define GATE_PIN 8 //gate control
 #define MIDI_BASE_NOTE 21 //lowest midi note
@@ -68,12 +93,18 @@ void loop() {
 void dacWrite(int value) {
   //write a 12 bit number to the MCP4921 DAC
   // take the SS pin low to select the chip:
-  PORTB &= ~4; //faster than digitalWrite
+  digitalWrite(SLAVE_SELECT_PIN, LOW);
   //send a value to the DAC
+  #ifdef MCP_4921
   SPI.transfer(0x30 | ((value >> 8) & 0x0F)); //bits 0..3 are bits 8..11 of 12 bit value, bits 4..7 are control data 
   SPI.transfer(value & 0xFF); //bits 0..7 of 12 bit value
+  #else
+  //MCP4821 DAC
+  SPI.transfer(0x10 | ((value >> 8) & 0x0F)); //bits 0..3 are bits 8..11 of 12 bit value, bits 4..7 are control data 
+  SPI.transfer(value & 0xFF); //bits 0..7 of 12 bit value
+  #endif
   // take the SS pin high to de-select the chip:
-  PORTB |= 4; //faster than digitalWrite 
+  digitalWrite(SLAVE_SELECT_PIN, HIGH);
 }
 
 void handleNoteOn(byte channel, byte pitch, byte velocity) { 
