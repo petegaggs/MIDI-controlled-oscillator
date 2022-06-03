@@ -28,7 +28,7 @@
  * SOFTWARE.
  */
 
- 
+#define MIDI_CHANNEL MIDI_CHANNEL_OMNI // set the midi channel to respond to
 // configure for DAC type
 #define MCP_4822
 //#define MCP_4921
@@ -62,8 +62,8 @@ void setTimer1(uint16_t val) {
 
 void setup() {
   //MIDI stuff
-  // Initiate MIDI communications, listen to all channels
-  MIDI.begin(MIDI_CHANNEL_OMNI);      
+  // Initiate MIDI communications, listen to selected channels only
+  MIDI.begin(MIDI_CHANNEL);      
   // Connect the HandleNoteOn function to the library, so it is called upon reception of a NoteOn.
   MIDI.setHandleNoteOn(handleNoteOn);  // Put only the name of the function
   // Do the same for NoteOffs
@@ -108,7 +108,7 @@ void dacWrite(int value) {
 }
 
 void handleNoteOn(byte channel, byte pitch, byte velocity) { 
-  // this function is called automatically when a note on message is received 
+  // this function is called automatically when a note on message is received
   keysPressedArray[pitch] = 1;
   synthNoteOn(pitch);
 }
